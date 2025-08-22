@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Admin - {{ room_id }}</title>
+    <script src="https://cdn.socket.io/4.5.0/socket.io.min.js"></script>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+        }
+        .video-container {
+            display: flex;
+            justify-content: center;
+            margin: 20px 0;
+        }
+        video {
+            background-color: #000;
+            border-radius: 8px;
+            max-width: 100%;
+        }
+        .status {
+            text-align: center;
+            margin: 10px 0;
+            font-weight: bold;
+        }
+        .connected {
+            color: #4CAF50;
+        }
+        .disconnected {
+            color: #f44336;
+        }
+        .btn {
+            display: inline-block;
+            padding: 10px 20px;
+            margin: 10px 5px;
+            background-color: #f44336;
+            color: white;
+            text-decoration: none;
+            border-radius: 4px;
+            font-weight: bold;
+            text-align: center;
+            border: none;
+            cursor: pointer;
+        }
+        .btn-back {
+            background-color: #2196F3;
+        }
+        .controls {
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Admin Panel - Room: {{ room_id }}</h1>
+        
+        <div class="controls">
+            <button onclick="goBack()" class="btn btn-back">Back to Home</button>
+        </div>
+        
+        <div class="video-container">
+            <video id="localVideo" autoplay muted playsinline width="640" height="480"></video>
+        </div>
+        
+        <div id="status" class="status">Setting up your camera...</div>
+    </div>
+
+    <script>
+        const localVideo = document.getElementById('localVideo');
+        const statusDiv = document.getElementById('status');
+        const roomId = "{{ room_id }}";
+        const socket = io();
+
+        // WebRTC Configuration
+        const pcConfig = {
+            iceServers: [
+                { urls: 'stun:stun.l.google.com:19302' },
+                { urls: 'stun:stun1.l.google.com:19302' }
+            ]
+        };
+
+        let pc = new RTCPeerConnection(pcConfig);
+        let localStream = null;
+
+        // Join room
+        socket.emit('join', { room_id: roomId });
+
+        // Setup media stream
+        async function setupMedia() {
+            try {
+                statusDiv.textContent = "Accessing camera...";
+                const stream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { width: 640, height: 480 },
+                    audio: true 
+                });
+                
+                localStream = stream;
+                localVideo.srcObject = stream;
+                statusDiv.textContent = "Camera active. Waiting for connection...";
+                
+                // Add tracks to peer connection
+                stream.getTracks().forEach(track => {
+                    pc.addTrack(track, stream);
+                });
+
+                // Create offer after media is setup
+                createOffer();
+            } catch (error) {
+                console.error('Error accessing media devices:', error);
+                statusDiv.textContent = "Error accessing camera. Please check permissions.";
+                statusDiv.className = "status disconnected";
+            }
+        }
+
+        // ICE Candidate Handling
+        pc.onicecandidate = (event) => {
+            if (event.candidate) {
+                socket.emit('webrtc_ice_candidate', {
+                    room_id: roomId,
+                    candidate: event.candidate
+                });
+            }
+        };
+
+        // Connection state change
+        pc.onconnectionstatechange = () => {
+            if (pc.connectionState === 'connected') {
+                statusDiv.textContent = "Connected! Streaming is active.";
+                statusDiv.className = "status connected";
+            } else if (pc.connectionState === 'disconnected') {
+                statusDiv.textContent = "Disconnected. Waiting for reconnect...";
+                statusDiv.className = "status disconnected";
+            }
+        };
+
+        // Create and send offer
+        async function createOffer() {
+            try {
+                const offer = await pc.createOffer();
+                await pc.setLocalDescription(offer);
+                
+                socket.emit('webrtc_offer', {
+                    room_id: roomId,
+                    sdp: pc.localDescription
+                });
+            } catch (error) {
+                console.error('Error creating offer:', error);
+            }
+        }
+
+        // Handle incoming answers
+        socket.on('webrtc_answer', async (data) => {
+            if (data.room_id === roomId) {
+                try {
+                    await pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
+                } catch (error) {
+                    console.error('Error setting remote description:', error);
+                }
+            }
+        });
+
+        // Handle incoming ICE candidates
+        socket.on('webrtc_ice_candidate', async (data) => {
+            if (data.room_id === roomId) {
+                try {
+                    await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
+                } catch (error) {
+                    console.error('Error adding ICE candidate:', error);
+                }
+            }
+        });
+
+        // Initialize
+        setupMedia();
+        
+        function goBack() {
+            if (localStream) {
+                localStream.getTracks().forEach(track => track.stop());
+            }
+            window.location.href = '/';
+        }
+    </script>
+</body>
+</html>
