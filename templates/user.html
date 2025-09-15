@@ -68,15 +68,15 @@
 <body>
     <div class="container">
         <h1>Watching Room: {{ room_id }}</h1>
-        
+
         <div class="controls">
             <button onclick="goBack()" class="btn">Back to Home</button>
         </div>
-        
+
         <div class="video-container">
             <video id="remoteVideo" autoplay playsinline width="640" height="480"></video>
         </div>
-        
+
         <div id="status" class="status waiting">Connecting to stream...</div>
     </div>
 
@@ -128,16 +128,14 @@
                 statusDiv.className = "status disconnected";
             }
         };
-
-        // Handle incoming offer
+                // Handle incoming offer
         socket.on('webrtc_offer', async (data) => {
             if (data.room_id === roomId) {
                 try {
                     await pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
                     const answer = await pc.createAnswer();
                     await pc.setLocalDescription(answer);
-                    
-                    socket.emit('webrtc_answer', {
+                                                                                                            socket.emit('webrtc_answer', {
                         room_id: roomId,
                         sdp: pc.localDescription
                     });
@@ -162,5 +160,23 @@
             window.location.href = '/';
         }
     </script>
+    
+    <div class="controls">
+    <button id="flipBtn" class="btn">Mirror/Flip Video</button>
+</div>
+
+<script>
+    const flipBtn = document.getElementById('flipBtn');
+    let isFlipped = false;
+
+    flipBtn.addEventListener('click', () => {
+        if (isFlipped) {
+            remoteVideo.style.transform = 'scaleX(1)'; // Normal
+        } else {
+            remoteVideo.style.transform = 'scaleX(-1)'; // Mirror
+        }
+        isFlipped = !isFlipped;
+    });
+</script>
 </body>
 </html>
